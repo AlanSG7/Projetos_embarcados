@@ -1,0 +1,104 @@
+#include <stdio.h>
+#include "pico/stdlib.h"
+#include "FreeRTOS.h"
+#include "task.h"
+
+// FALTA: Criar as outras duas task, sincronizar a comunicação entre elas e confirmar o número dos pinos do botão e do led!
+
+
+// Definindo os pinos do microcontrolador para o botão e o LED
+#define BOTAO 5 // Botão A da placa BitDogLab
+#define LED 11 // Pino referente à cor verde do LED RGB da placa BitDogLab
+
+// Variáveis de estado do botão e do LED
+bool estado_botao = 1;
+bool estado_led = 0;
+
+// Identificador da task que irá controlar o estado do LED
+TaskHandle_t controle_LED_task_handle;
+/**************************************Declarando as tasks do problema***************************************/
+
+// Task 1: Leitura do botão
+void leitura_botao_task(void *pvParameters)
+{
+    // Laço inifnito da task
+    for(;;)
+    {
+        estado_botao = gpio_get(BOTAO); // Captura o estado do botão
+        vTaskDelay(pdMS_TO_TICKS(100)); // delay de 100 ms para a task
+    }
+
+}
+
+// Task 2: Processamento e decisão
+void processamento_botao_task(void *pvParameters)
+{
+    for(;;)
+    {
+        if(estado_botao==0)
+        {
+            // Envia uma notificação para a tarefa controle_LED_task()
+            xTaskNotifyGive(controle_LED_task_handle);
+        }
+
+        // delay de 10 ms para que ocorra um debouncing do botão
+        vTaskDelay(pdMS_TO_TICKS(10)); 
+    }
+}
+
+// Task 3: Controle do LED
+void controle_LED_task(void *pvParameters)
+{
+    for(;;)
+    {
+        //Aguarda indefinidamente a notificação da tarefa "processamento_botao_task()"
+        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+
+        // Definindo o estado do LED de acordo com o estado do botão.
+        //OBS: o botão está com resistor de pull-up (ou seja, está em nível lógico alto quando não pressionado).
+        if(estado_botao==0)
+        {
+            estado_led=1;
+        }
+        else
+        {
+            estado_led = 0;
+        }
+
+        // Alterando o estado do LED
+        gpio_put(LED, estado_led);
+
+    }
+}
+
+
+/*********************************** Declarando a função "int main()" do código *****************************************************/
+int main()
+{
+    // Inicialização da comunicação padrão do Pi Pico
+    stdio_init_all();
+
+    // Inicializando o pino do botão
+    gpio_init(BOTAO);
+    gpio_set_dir(BOTAO, GPIO_IN);
+    gpio_pull_up(BOTAO);
+
+    // Inicializando o pino do LED
+    gpio_init(LED);
+    gpio_set_dir(LED, GPIO_OUT);
+
+
+    // Criando as tasks
+    xTaskCreate(leitura_botao_task,"tarefa leitura botao", 128, NULL, 1, NULL); // Task com prioridade 1 (baixa)
+    xTaskCreate(processamento_botao_task, "tarefa processamento botao", 128, NULL, 2, NULL); // Task com prioridade 2 (média)
+    xTaskCreate(controle_LED_task, "tarefa controle LED", 128, NULL, 3, &controle_LED_task_handle); // Task com prioridade 3 (alta)
+
+    // Iniciando o escalonador de tarefas
+    vTaskStartScheduler();
+
+    // Loop infinito para ser acessado no caso de algum tipo de falha na inicialização do escalonador de tarefas
+    while (true) 
+    {
+        tight_loop_contents(); // Função que otimiza o loop vazio para evitar consumo excessivo de CPU.     
+    }
+}
