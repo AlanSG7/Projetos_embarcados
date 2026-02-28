@@ -101,10 +101,10 @@ bool dados_GPS(char* sentenca, char* resultado_lat, char* resultado_lon, char* h
     }
 
     // Copiando a string de interesse para o buffer
-    char buffer[128]; // Essa variável é necessária?
+    char buffer[128]; 
     strcpy(buffer,sentenca);
 
-    // Separando as partes da string (AVALIAR SE ESTÁ CORRETO!!!!!)
+    // Separando as partes da string 
     char *identificador = strtok(buffer,",");
     char *hora_utc = strtok(NULL, ",");
     char *estado = strtok(NULL, ",");
@@ -132,21 +132,6 @@ bool dados_GPS(char* sentenca, char* resultado_lat, char* resultado_lon, char* h
     {
         return false;
     }
-
-    /*
-    if(strcmp(estado,"A")==0)
-    {
-        sprintf(resultado_lat,"Latitude: %s %s",latitude,hemisferio_latitude);
-        sprintf(resultado_lon,"Longitude: %s %s",longitude,hemisferio_longitude);
-
-
-    }
-    else
-    {
-        sprintf(resultado_lat,"Sistema GPS fora do ar\n\n");
-        sprintf(resultado_lon,"Sistema GPS fora do ar\n\n");
-    }
-        */
 
 }
 

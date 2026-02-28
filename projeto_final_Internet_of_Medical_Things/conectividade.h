@@ -23,17 +23,18 @@ Mentora: Gabriela Teixeira
 #include "lwip/altcp_tcp.h" // TCP alternativo (permite o uso de TCP com TSL/SSL sem mudanças no código da aplicação)
 #include "lwip/altcp_tls.h" // Complemento da "ALTCP" (para oferecer suporte À TLS/SSL, permitindo conexões mais seguras)
 
+// Macro para ajudar a habilitar/desabilitar "printf" utilizados somente para debug
+#define DEBUG_printf  printf
+
 // Macros para se trabalhar com o MQTT
-#define DEBUG_printf  // Macro para ajudar a habilitar/desabilitar "printf" utilizados somente para debug
 //#define MQTT_SERVER_HOST "broker.hivemq.com" // Endereço do servidor MQTT (HiveMQ)
 #define MQTT_SERVER_HOST "broker.emqx.io" // Endereço do servidor MQTT (EMQX)
-#define MQTT_SERVER_PORT 1883 // Porta de comunicação com o servidor MQTT
-#define MQTT_TLS 0 // Ativação ou não do protocolo de segurança TLS
-#define BUFFER_SIZE 1024 // Tamanho do buffer para enviar/receber a mensagem
+#define MQTT_SERVER_PORT 8883 // Porta de comunicação com o servidor MQTT (TLS)
+#define BUFFER_SIZE 2048 // Tamanho do buffer para enviar/receber a mensagem
 #define ID_DO_CLIENTE "Pico_W_Alan_Sovano" // ID utilizado para comunicação MQTT
 #define PUB_DELAY_US 1000000 // Tempo de espera (microssegundos) para o laço de publish do MQTT
 
-// Usuário e senha para acessar o broker
+// Usuário e senha para acessar o broker (aplicações futuras, no caso de um broker que exija autenticação)
 //#define MQTT_USER        "IOMT_EMBARCATECH"
 //#define MQTT_PASSWORD    "alansovano@nota10"
 
@@ -47,6 +48,7 @@ Mentora: Gabriela Teixeira
 #define BUZZER 21 // Pino do buzzer
 #define BUTTON5_PIN 5 // Pino do botão A
 #define LED_PIN CYW43_WL_GPIO_LED_PIN // Pino referente ao LED do módulo Wi-Fi
+#define LED_PINB 12// Pino referente ao LED do módulo Wi-Fi
 
 
 // Define uma variável do tipo struct para lidar com parâmetros de cliente MQTT
@@ -57,6 +59,7 @@ typedef struct MQTT_CLIENT_T_
     u32_t received;
     u32_t counter;
     u32_t reconnect;
+    struct altcp_tls_config *tls_config;
 } MQTT_CLIENT_T;
 
 

@@ -1,7 +1,7 @@
+// ca_cert.h
 #pragma once
-#include <stddef.h>
 
-static const unsigned char ca_cert[] =
+static const char ca_cert[] =
 "-----BEGIN CERTIFICATE-----\n"
 "MIIDjjCCAnagAwIBAgIQAzrx5qcRqaC7KGSxHQn65TANBgkqhkiG9w0BAQsFADBh\n"
 "MQswCQYDVQQGEwJVUzEVMBMGA1UEChMMRGlnaUNlcnQgSW5jMRkwFwYDVQQLExB3\n"
@@ -24,5 +24,3 @@ static const unsigned char ca_cert[] =
 "pLiaWN0bfVKfjllDiIGknibVb63dDcY3fe0Dkhvld1927jyNxF1WW6LZZm6zNTfl\n"
 "MrY=\n"
 "-----END CERTIFICATE-----\n";
-
-static const size_t ca_cert_len = sizeof(ca_cert);

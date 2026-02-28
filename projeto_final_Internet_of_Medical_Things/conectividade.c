@@ -20,12 +20,14 @@ static uint32_t last_time = 0; // Variável auxiliar para o tempo de publish do 
 char estado_botao_string[20] = "não pressionado"; // String que armazena o estado lógico do botão 
 bool mqtt_conectado = false; // Verifica se a conexão MQTT foi realizada com sucesso
 bool mqtt_conectando = false; // Verifica se a conexão MQTT está em processo de conexão 
+bool dns_ok = false; // Variável para verificar a resolução do DNS
 
 // Flags para envio de mensagens e interface com "U7_projeto_final.c"
 extern bool flag_queda;
 extern bool flag_localizacao;
 extern bool flag_desliga_alarme;
 extern bool flag_liga_alarme;
+
 
 // Dados GPS
 extern char info2[50];
@@ -36,10 +38,7 @@ extern char info4 [25]; //BPM
 extern char info5 [25]; // SpO2
 
 
-
-
 /***************************************************Funções para processar as mensagens recebidas via MQTT***********************************************/
-
 
 // Função de callback para tratar as mensagens recebidas em um tópico MQTT no qual a Pi Pico está inscrita
 static void mqtt_pub_data_cb(void *arg, const u8_t *data, u16_t len, u8_t flags) 
@@ -83,7 +82,7 @@ static void mqtt_pub_data_cb(void *arg, const u8_t *data, u16_t len, u8_t flags)
         flag_localizacao = true;
     }
 
-       /*   
+    /* DEBUG   
     } 
     else 
     {
@@ -124,6 +123,14 @@ MQTT_CLIENT_T* mqtt_client_init(void)
         return NULL;
     }
 
+    // Criando configuração TLS
+    state->tls_config = altcp_tls_create_config_client(ca_cert, sizeof(ca_cert));
+    if (!state->tls_config) 
+    {
+        DEBUG_printf("Erro ao criar TLS config\n");
+    }
+    
+
     // Se a alocação de memória é um sucesso, cria um ponteiro para a estrutura
     return state;
 }
@@ -139,10 +146,12 @@ void dns_found(const char *name, const ip_addr_t *ipaddr, void *callback_arg)
         // Salva o endereço de IP na estrutura do cliente MQTT
         state->remote_addr = *ipaddr; 
         DEBUG_printf("DNS resolvido: %s\n", ip4addr_ntoa(ipaddr));
+        dns_ok = true;
     } 
     else 
     {
         DEBUG_printf("Falha na resolução do DNS.\n");
+        dns_ok = false;
     }
 }
 
@@ -152,14 +161,17 @@ void run_dns_lookup(MQTT_CLIENT_T *state)
 {
     DEBUG_printf("Realizando a resolução do DNS %s...\n", MQTT_SERVER_HOST);
 
-    // Utiliza a função "dns_gethostbyname()" (da biblioteca lwIP) para encontrar o IP do host do broker
-    if (dns_gethostbyname(MQTT_SERVER_HOST, &(state->remote_addr), dns_found, state) == ERR_INPROGRESS) 
+    // Utiliza a função "dns_gethostbyname()" (da biblioteca lwIP) para encontrar o IP do host do broker    
+    cyw43_arch_lwip_begin();
+    err_t err = dns_gethostbyname(MQTT_SERVER_HOST, &(state->remote_addr), dns_found, state);
+    cyw43_arch_lwip_end();
+
+    if (err == ERR_OK) 
     {
-        while (state->remote_addr.addr == 0) 
-        {
-            // Processa eventos da rede Wi-Fi enquanto espera a resolução do DNS
-            vTaskDelay(pdMS_TO_TICKS(10));
-        }
+        // Já resolveu imediatamente
+        cyw43_arch_lwip_begin();
+        dns_found(MQTT_SERVER_HOST, &(state->remote_addr), state);
+        cyw43_arch_lwip_end();
     }
 }
 
@@ -179,7 +191,7 @@ static void mqtt_conexao_cb(mqtt_client_t *client, void *arg, mqtt_connection_st
     if (status == MQTT_CONNECT_ACCEPTED) 
     {
         mqtt_conectado = true;
-       // cyw43_arch_gpio_put(LED_PIN, 1);
+        cyw43_arch_gpio_put(LED_PIN, 1);
         DEBUG_printf("MQTT conectado.\n");
 
         // Se ocorre a conexão com o servidor MQTT, faz a inscrição nos tópicos descritos neste trecho
@@ -190,7 +202,7 @@ static void mqtt_conexao_cb(mqtt_client_t *client, void *arg, mqtt_connection_st
     else
     {
          mqtt_conectado = false;
-        //cyw43_arch_gpio_put(LED_PIN, 0);
+        cyw43_arch_gpio_put(LED_PIN, 0);
         DEBUG_printf("A conexão com o MQTT falhou.\n");
 
     }
@@ -202,31 +214,32 @@ static void mqtt_conexao_cb(mqtt_client_t *client, void *arg, mqtt_connection_st
 err_t mqtt_conectar(MQTT_CLIENT_T *state) 
 {
     struct mqtt_connect_client_info_t ci = {0};
+    ci.keep_alive = 60;
     ci.client_id = ID_DO_CLIENTE;
+    ci.tls_config = state->tls_config;
 
-     /* PARA IMPLEMENTAÇÕES FUTURAS
+    /*
+    // Autenticação (aplicações futuras em broker privado)
     ci.client_user = MQTT_USER;
     ci.client_pass = MQTT_PASSWORD; 
-
-     #if MQTT_TLS
-    // ===== TLS CONFIGURAÇÃO =====
-    struct altcp_tls_config *tls_config;
-
-    tls_config = altcp_tls_create_config_client(ca_cert, ca_cert_len);
-    if (!tls_config) {
-        DEBUG_printf("Erro ao criar TLS config\n");
-        return ERR_VAL;
-    }
-
-    ci.tls_config = tls_config;  
-#endif
-
+    */
 
     DEBUG_printf("Conectando ao broker MQTT com TLS...\n");
-*/
 
-    return mqtt_client_connect(state->mqtt_client, &(state->remote_addr), MQTT_SERVER_PORT, mqtt_conexao_cb, state, &ci);
+   cyw43_arch_lwip_begin();  
+    err_t err = mqtt_client_connect(
+        state->mqtt_client,
+        &(state->remote_addr),
+        MQTT_SERVER_PORT,
+        mqtt_conexao_cb,
+        state,
+        &ci
+    );
+    cyw43_arch_lwip_end();    
+
+    return err;
 }
+
 
 
 
@@ -298,7 +311,11 @@ err_t mqtt_publicar(MQTT_CLIENT_T *state)
             flag_localizacao = false;
         }
 
-        return mqtt_publish(state->mqtt_client, "pico_w/Alan_Sovano/pub", buffer, strlen(buffer), 0, 0, mqtt_pub_request_cb, state);
+       cyw43_arch_lwip_begin();
+        err_t err = mqtt_publish(state->mqtt_client, "pico_w/Alan_Sovano/pub", buffer, strlen(buffer), 0, 0, mqtt_pub_request_cb, state);
+       cyw43_arch_lwip_end();
+        return err;
+
     }
     else
     {

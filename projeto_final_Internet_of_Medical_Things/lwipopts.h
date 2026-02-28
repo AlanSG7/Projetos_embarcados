@@ -86,11 +86,11 @@
 #define PPP_DEBUG                   LWIP_DBG_OFF
 #define SLIP_DEBUG                  LWIP_DBG_OFF
 #define DHCP_DEBUG                  LWIP_DBG_OFF
-#define ALTCP_MBEDTLS_DEBUG         LWIP_DBG_ON
+#define ALTCP_MBEDTLS_DEBUG         LWIP_DBG_OFF
 #define MQTT_DEBUG                  LWIP_DBG_OFF
 #define ALTCP_MBEDTLS_MEM_DEBUG     LWIP_DBG_OFF
 
-// Não usa criptografia
+// Usa criptografia
 #define LWIP_ALTCP               1
 #define LWIP_ALTCP_TLS           1
 #define LWIP_ALTCP_TLS_MBEDTLS   1
@@ -102,7 +102,7 @@
 #define MEM_ALIGNMENT               4
 
 // ESSENCIAL: Diz ao lwIP para usar os hooks do FreeRTOS
-#define TCPIP_THREAD_STACKSIZE      1024
+#define TCPIP_THREAD_STACKSIZE      2048
 #define TCPIP_THREAD_PRIO           (configMAX_PRIORITIES - 2)
 #define TCPIP_MBOX_SIZE             8
 #define DEFAULT_TCP_RECVMBOX_SIZE   8

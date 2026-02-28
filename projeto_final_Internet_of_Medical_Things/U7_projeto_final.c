@@ -55,12 +55,16 @@ char info5 [25];
 // Variáveis do MQTT (vindas de conectividade.c)
 extern bool mqtt_conectado; // Verifica se a conexão MQTT foi realizada com sucesso
 extern bool mqtt_conectando; // Verifica se a conexão MQTT está em processo de conexão
+extern bool dns_ok; // Variável para verificar a resolução do DNS
    
 // Declarando as filas a serem utilizadas para a sincronização entre tarfas
 QueueHandle_t queue_dados_acelerometro, queue_dados_angulo, queue_dados_GPS, queue_dados_PPG, queue_dados_GPS_OLED;
 
-// Declaração de semaphoro para mutex
+// Declaração de sem´sforo para mutex
 SemaphoreHandle_t i2c_sensores_mutex;
+
+// Semáforo binário para controle de inicialização do Wi-Fi
+SemaphoreHandle_t wifi_ready_sem;
 
 // Flags para envio de mensagens e interface com "conectividade.c"
 bool flag_queda = false;
@@ -120,7 +124,7 @@ void aquisicao_dados_GPS_task(void *pvParameters)
     for(;;)
     {
         // Verifica se há o que ler na UART
-        if (uart_is_readable(UART_ID)) 
+        if(uart_is_readable(UART_ID)) 
         {
             // Capta o caracter que está vindo pela uart para análise
             char c = uart_getc(UART_ID);
@@ -294,7 +298,7 @@ void processa_dados_task(void *pvParameters)
                     orientacao_ref_norm.az = dados_recebidos_MPU.az/norma_ac;
 
                     // DEBUG
-                    // printf("OK 1 \n");
+                    // DEBUG_printf("OK 1 \n");
                 }
                 break;
 
@@ -309,7 +313,7 @@ void processa_dados_task(void *pvParameters)
                     tempo_impacto = get_absolute_time();
 
                     // DEBUG
-                   // printf("OK 2 \n");
+                   // DEBUG_printf("OK 2 \n");
                 }
 
                 // Se o tempo passou e não entrou na condição anterior, volta ao pimeiro etado
@@ -333,7 +337,7 @@ void processa_dados_task(void *pvParameters)
                     tempo_inatividade = get_absolute_time();
 
                     // DEBUG
-                    // printf ("OK 3 \n");
+                    // DEBUG_printf ("OK 3 \n");
                 }
 
                 // Se há uma variação grande da aceleração e já passou um tempo grande, não houve queda
@@ -364,7 +368,7 @@ void processa_dados_task(void *pvParameters)
                 orientacao_norm.az*orientacao_ref_norm.az);
 
                 // DEBUG
-               // printf("%.2f \n", prod_escalar);
+               // DEBUG_printf("%.2f \n", prod_escalar);
 
                 // Se o produto escalar é alto (mais perto de 1) por um tempo, a orientação não mudou (não houve queda)
                 
@@ -380,7 +384,7 @@ void processa_dados_task(void *pvParameters)
                     estado_queda = EST_QUEDA_CONFIRMADA;
 
                     // DEBUG
-                    // printf ("OK 4 \n");
+                    // DEBUG_printf ("OK 4 \n");
                 }
                 
                 break;
@@ -389,7 +393,7 @@ void processa_dados_task(void *pvParameters)
             case EST_QUEDA_CONFIRMADA:
 
                 // Mexe no estado das flags de envio de mensagem e liga os alarmes
-                //printf ("queda confirmada!");
+                //DEBUG_printf ("queda confirmada!");
                 flag_queda = true;
                 flag_liga_alarme = false;
                 estado_queda = EST_NORMAL;
@@ -537,19 +541,26 @@ void interface_usuario_task(void *pvParameters)
 // Task 6: Conectividade (Wi-Fi e MQTT)
 void conectividade_MQTT_task(void *pvParameters)
 {
+
+    xSemaphoreTake(wifi_ready_sem, portMAX_DELAY);
     // Tenta se conectar à rede wi-fi por 1 minuto
-    printf("Conectando ao Wi-Fi...\n");
+    DEBUG_printf("Conectando ao Wi-Fi...\n");
     while (cyw43_arch_wifi_connect_timeout_ms(WIFI_SSID, WIFI_PASSWORD, CYW43_AUTH_WPA2_AES_PSK, 60000))
     {
-        printf("Falha ao conectar à rede Wi-Fi\n");
+        DEBUG_printf("Falha ao conectar à rede Wi-Fi\n");
         vTaskDelay(pdMS_TO_TICKS(100));
         continue;
     }
-    printf("Conectado ao Wi-Fi\n");
+    DEBUG_printf("Conectado ao Wi-Fi\n");
 
     MQTT_CLIENT_T *state = mqtt_client_init();
     run_dns_lookup(state);  
     state->mqtt_client = mqtt_client_new();
+
+    while (!dns_ok)
+{
+    vTaskDelay(pdMS_TO_TICKS(100));
+}
 
     for(;;)
     {
@@ -561,7 +572,7 @@ void conectividade_MQTT_task(void *pvParameters)
             }
             else if (!mqtt_conectando)
             {
-                DEBUG_printf("Reconectando...\n");
+                DEBUG_printf("Conectando MQTT...\n");
                 mqtt_conectando = true;
                 cyw43_arch_gpio_put(LED_PIN, 0);
 
@@ -587,13 +598,16 @@ void wifi_init_task(void *p)
     // Tenta inicializar o módulo Wi-Fi
     while (cyw43_arch_init()) 
     { 
-        printf("Falha ao inicializar Wi-Fi\n"); 
+        DEBUG_printf("Falha ao inicializar Wi-Fi\n"); 
         vTaskDelay(pdMS_TO_TICKS(100)); 
     } 
     
     // Colocando o pi pico W em modo station (vai se conectar ao roteador wi-fi) 
     cyw43_arch_enable_sta_mode(); 
-    printf("Wi-Fi inicializado!\n"); 
+    DEBUG_printf("Wi-Fi inicializado!\n"); 
+
+    xSemaphoreGive(wifi_ready_sem);
+
     vTaskDelete(NULL); 
 }
 
@@ -697,6 +711,9 @@ int main()
     // Criando o mutex
     i2c_sensores_mutex = xSemaphoreCreateMutex();
 
+    // Criando semáfiro binário 
+    wifi_ready_sem = xSemaphoreCreateBinary();
+
     // Verificando se foi crido com sucesso
     configASSERT(i2c_sensores_mutex != NULL); 
 
@@ -716,7 +733,7 @@ int main()
         xTaskCreate(interface_usuario_task,"tarefa_interface_usuario", 2048, NULL, 1, NULL); // Task com prioridade 1 (baixa)
         xTaskCreate(processa_dados_task,"tarefa_processar_dados", 1024, NULL, 3, NULL); // Task com prioridade 3 (alta)
         xTaskCreate(conectividade_MQTT_task,"tarefa_conectar_MQTT", 8192, NULL, 3, NULL); // Task com prioridade 3 (alta)
-        xTaskCreate(wifi_init_task, "wifi_init", 8192, NULL, CYW43_TASK_PRIORITY, NULL); // Prioridade máxima (inicialização do hardware, task morre após execução)
+        xTaskCreate(wifi_init_task, "wifi_init", 2048, NULL, CYW43_TASK_PRIORITY, NULL); // Prioridade máxima (inicialização do hardware, task morre após execução)
 
     
         // Iniciando o escalonador de tarefas

@@ -66,7 +66,8 @@ target_link_libraries(U7_projeto_final
         pico_lwip_mbedtls
         pico_mbedtls
         hardware_adc
-        hardware_pwm)
+        hardware_pwm
+        hardware_clocks)
 
 # Add the standard include files to the build
 target_include_directories(U7_projeto_final PRIVATE
